@@ -1,0 +1,19 @@
+
+# Node.js
+node_modules/
+dist/
+
+# .NET
+bin/
+obj/
+
+# Visual Studio
+.vs/
+
+# Environment variables
+.env
+.env.local
+
+# Operating system
+.DS_Store
+Thumbs.db
