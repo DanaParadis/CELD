@@ -6,6 +6,8 @@ dist/
 # .NET
 bin/
 obj/
+server/CELD.Api/App_Data/
+**/TestResults/
 
 # Visual Studio
 .vs/

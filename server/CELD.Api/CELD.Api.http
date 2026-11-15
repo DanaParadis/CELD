@@ -1,6 +1,16 @@
 @CELD.Api_HostAddress = http://localhost:5133
 
-GET {{CELD.Api_HostAddress}}/weatherforecast/
+GET {{CELD.Api_HostAddress}}/api/equipment
+Accept: application/json
+
+###
+
+GET {{CELD.Api_HostAddress}}/api/equipment?search=laptop&category=Computers
+Accept: application/json
+
+###
+
+GET {{CELD.Api_HostAddress}}/api/equipment/1
 Accept: application/json
 
 ###

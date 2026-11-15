@@ -1,582 +1,197 @@
-# CELD – Campus Equipment Lending Desk
+# Campus Equipment Lending Desk (CELD)
 
-## 1. Descripción del proyecto
+CELD is a small browser-based equipment lending product for visitors,
+provisioned Students, and Lending Staff. It supports the public catalog,
+Student reservations and cancellations, and Staff pickup/return processing.
 
-**Campus Equipment Lending Desk (CELD)** es un sistema diseñado para facilitar la consulta del catálogo de equipos disponibles para préstamo dentro de una institución universitaria.
+The implementation follows Group 6's Week 1 starting profile **F**: direct
+ASP.NET Core Minimal API handlers with few abstractions and emphasis on
+end-to-end/provider-faithful integration checks. See
+[ADR-002](docs/adr/002-profile-f-full-product.md) for the revised decision and
+its pending provider confirmation.
 
-El sistema permite a los usuarios visualizar los equipos registrados, buscar artículos por nombre, filtrar por categoría y consultar información detallada de cada equipo, incluyendo su código de activo, descripción y disponibilidad actual.
-
-Este proyecto se desarrolla como parte del curso **COMP3402 – Software Engineering II**.
-
-## 2. Alcance del módulo desarrollado
-
-Este módulo se concentra en la funcionalidad de consulta del catálogo de equipos, correspondiente al caso de uso **UC-001: Find Equipment**.
-
-Las funcionalidades implementadas son:
-
-- Visualización del catálogo de equipos.
-- Obtención de los equipos mediante una solicitud a la API.
-- Búsqueda de equipos por nombre.
-- Búsqueda sin distinción entre letras mayúsculas y minúsculas.
-- Filtrado de equipos por categoría.
-- Combinación de búsqueda por nombre y filtrado por categoría.
-- Visualización de información individual de cada equipo.
-- Consulta de código de activo, categoría, descripción y disponibilidad.
-- Mensaje cuando no existen equipos que coincidan con los criterios de búsqueda.
-- Manejo de errores cuando no se puede obtener información del servidor.
-- Indicador de carga mientras se obtiene el catálogo.
-
-El módulo está preparado para integrarse posteriormente con los demás componentes desarrollados por el equipo.
-
-## 3. Tecnologías utilizadas
-
-### Frontend
-
-| Tecnología | Propósito |
-|---|---|
-| React | Construcción de la interfaz de usuario. |
-| TypeScript | Tipado estático y definición de estructuras de datos. |
-| Vite | Herramienta de desarrollo y compilación. |
-| CSS | Diseño y estilos de la interfaz. |
-| Vitest | Ejecución de pruebas automatizadas. |
-| React Testing Library | Pruebas de los componentes y comportamiento de la interfaz. |
-| jsdom | Simulación del entorno del navegador durante las pruebas. |
-
-### Backend
-
-| Tecnología | Propósito |
-|---|---|
-| C# | Lenguaje utilizado para el backend. |
-| ASP.NET Core | Desarrollo de la API REST. |
-| .NET 10 | Plataforma de ejecución del backend. |
-
-### Herramientas de desarrollo
-
-- Visual Studio Code.
-- Node.js.
-- npm.
-- .NET SDK.
-- Git (para control de versiones, cuando corresponda).
-
-## 4. Arquitectura del proyecto
-
-El proyecto utiliza una arquitectura cliente-servidor.
-
-El frontend realiza solicitudes HTTP al backend para obtener la información del catálogo. El backend procesa las solicitudes y devuelve los datos en formato JSON.
-
-### Flujo de comunicación
-
-1. El usuario accede a la interfaz de CELD.
-2. React solicita el catálogo al backend.
-3. ASP.NET Core recibe la solicitud HTTP.
-4. El backend devuelve la información de los equipos en formato JSON.
-5. React procesa la respuesta y muestra los equipos.
-6. El usuario puede buscar, filtrar y consultar los detalles de cada equipo.
-
-### Estructura de carpetas
+## Architecture and enforcement
 
 ```text
-CELD/
-│
-├── client/
-│   ├── src/
-│   │   ├── assets/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/
-│   │   │   └── equipmentService.ts
-│   │   ├── test/
-│   │   │   └── setup.ts
-│   │   ├── types/
-│   │   │   └── equipment.ts
-│   │   ├── App.tsx
-│   │   ├── App.css
-│   │   ├── index.css
-│   │   └── main.tsx
-│   │
-│   ├── public/
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── index.html
-│
-├── server/
-│   └── CELD.Api/
-│       ├── Program.cs
-│       └── CELD.Api.csproj
-│
-├── docs/
-│
-└── README.md
+React + TypeScript -- same-origin /api --> ASP.NET Core Minimal API
+                                               |
+                                   EF Core CeldDbContext
+                                               |
+                           SQLite: Items, Accounts, Reservations, History
 ```
 
-*Nota: la estructura representa los archivos principales utilizados en el desarrollo. Pueden existir otros archivos de configuración generados automáticamente.*
+- Cookie authentication derives user identity and role from validated server
+  claims. Role policies protect Student and Staff routes; Student detail and
+  cancellation queries are scoped to the current account. Cookie-authenticated
+  mutations also require an antiforgery token.
+- **BR-RES-002:** a unique filtered relational index permits at most one
+  `Reserved`/`CheckedOut` reservation per item. The database, not the client
+  availability display, decides the winner of competing requests.
+- **BR-RES-003:** cancellation, pickup, and return write only from their
+  specified source status. The expected status is part of the update predicate.
+- **BR-RES-004:** reservation creation plus its initial History Event use one
+  `SaveChanges`; status changes and their History Event share a database
+  transaction. Integration tests inject a SQLite trigger failure and verify
+  rollback.
+- The product has no record-delete route. Availability is computed from
+  persisted active Reservations.
 
-## 5. Modelo de datos
+SQLite is the provisional relational provider because the instructor
+environment sheet was not supplied. Confirm it against that sheet before
+deployment. The original Week 1 catalog ADR remains in the repository as the
+historical decision; ADR-002 records the full-product revision.
 
-Para representar los equipos del catálogo se creó una interfaz de TypeScript denominada `Equipment`.
+## Requirements baseline and traceability
 
-Ubicación:
+Implementation is based on the user-provided CELD SRS v1.1.1
+(`COMP3402 - Campus Equipment Lending Desk SRS v1.1.1.md`, provided from
+Downloads). The source document labels its baseline “proposed”; the team should
+retain instructor approval with its course materials. The
+[Requirements Traceability Matrix](docs/requirements-traceability.md) links
+each `FR`, `BR`, `NFR`, and `AC` to code/tests and records pass, unrun, or
+pending evidence honestly.
 
-`client/src/types/equipment.ts`
+## Prerequisites
 
-```typescript
-export interface Equipment {
-  id: number
-  assetCode: string
-  name: string
-  category: string
-  description: string
-  availability: 'Available' | 'Unavailable'
-}
-```
+- .NET SDK 10.0.4xx
+- Node.js 26.1.0 and npm
+- Windows PowerShell (the local secure-seed helper is a `.ps1` script)
 
-### Descripción de los atributos
+The SDK and Node versions above match the environment used for local
+verification. Replace them only with the course-approved toolchain.
 
-| Atributo | Tipo | Descripción |
-|---|---|---|
-| id | number | Identificador del equipo. |
-| assetCode | string | Código único del activo. |
-| name | string | Nombre del equipo. |
-| category | string | Categoría a la que pertenece. |
-| description | string | Descripción del equipo. |
-| availability | string | Estado actual de disponibilidad. |
+## Local setup and run
 
-El atributo `availability` utiliza dos valores:
+1. From the repository root, start the API:
 
-- `Available`: el equipo está disponible.
-- `Unavailable`: el equipo no está disponible.
+   ```powershell
+   .\scripts\Start-CeldLocal.ps1
+   ```
 
-Esta interfaz permite mantener una estructura consistente entre los datos recibidos desde la API y los componentes del frontend.
+   The script prompts securely for three local seed passwords (at least 12
+   characters): Student 1, Student 2, and Staff. They are passed only to the
+   API process, hashed before storage, and never written to source or docs.
+   The account names are `student1`, `student2`, and `staff1`. The API creates
+   six catalog items and stores its local database at
+   `server\CELD.Api\App_Data\celd.db`.
 
-## 6. Backend y API
+   The API listens at `http://localhost:5133`. The selected SQLite provider and
+   default local path are provisional pending instructor confirmation. Existing
+   seeded account passwords are updated from the secure prompts when the API
+   starts.
 
-El backend fue desarrollado utilizando ASP.NET Core.
+2. In a second terminal, start the client:
 
-Actualmente, el servidor expone un endpoint para obtener el catálogo de equipos.
+   ```powershell
+   Set-Location client
+   npm.cmd ci
+   npm.cmd run dev
+   ```
 
-### Endpoint
+   Open `http://localhost:5173`. Vite proxies `/api` requests to the API, so
+   development requests use same-origin cookies.
 
-| Método HTTP | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/equipment` | Obtiene la lista de equipos. |
+## API contract
 
-**URL local:**
+All JSON uses camel-case fields. Errors use `application/problem+json` (or
+validation problem details) and distinguish authentication, authorization,
+not-found, validation, and conflict conditions.
 
-```text
-http://localhost:5133/api/equipment
-```
-
-La respuesta se devuelve en formato JSON.
-
-Ejemplo:
-
-```json
-[
-  {
-    "id": 1,
-    "assetCode": "DEMO-001",
-    "name": "Laptop Dell",
-    "category": "Computadoras",
-    "description": "Laptop para uso académico.",
-    "availability": "Available"
-  }
-]
-```
-
-### Datos de demostración
-
-Actualmente, el backend utiliza seis registros de demostración:
-
-| Código | Equipo | Categoría | Disponibilidad |
+| Method | Route | Access | Purpose |
 |---|---|---|---|
-| DEMO-001 | Laptop Dell | Computadoras | Available |
-| DEMO-002 | Laptop HP | Computadoras | Available |
-| DEMO-003 | Mouse Logitech | Accesorios | Available |
-| DEMO-004 | Teclado mecánico | Accesorios | Unavailable |
-| DEMO-005 | Monitor Dell | Monitores | Available |
-| DEMO-006 | Tablet Samsung | Tabletas | Available |
+| `GET` | `/api/auth/csrf` | Public | Issue an antiforgery request token |
+| `POST` | `/api/auth/login` | Public + CSRF | Sign in with a provisioned account |
+| `GET` | `/api/auth/me` | Public | Return current display name/role, or `null` when anonymous |
+| `POST` | `/api/auth/logout` | Signed in + CSRF | End the session |
+| `GET` | `/api/equipment?search=&category=` | Public | Search/filter authoritative catalog |
+| `GET` | `/api/equipment/{id}` | Public | Get current item details/availability |
+| `POST` | `/api/reservations` | Student + CSRF | Create for `{ "equipmentId": 1 }` |
+| `GET` | `/api/reservations` | Student | List only the current Student's records |
+| `GET` | `/api/reservations/{id}` | Owner Student or Staff | Read a reservation and chronological history |
+| `POST` | `/api/reservations/{id}/cancel` | Owner Student + CSRF | `Reserved → Cancelled` |
+| `GET` | `/api/staff/reservations?status=` | Staff | List/filter the lending queue |
+| `POST` | `/api/reservations/{id}/pickup` | Staff + CSRF | `Reserved → CheckedOut` |
+| `POST` | `/api/reservations/{id}/return` | Staff + CSRF | `CheckedOut → Returned` |
 
-**Importante:** los registros actuales son datos temporales almacenados en memoria. Todavía no se ha integrado una base de datos persistente. Por lo tanto, estos datos sirven para desarrollar y probar la funcionalidad del catálogo, pero no representan todavía un sistema de almacenamiento definitivo.
+Protected writes send the request token in `X-CSRF-TOKEN`; the browser client
+fetches it from `/api/auth/csrf` before each write. Caller-supplied Student IDs
+or roles are not used to authorize actions.
 
-## 7. Servicio de comunicación con la API
+## Automated checks
 
-Para separar la comunicación HTTP de los componentes de React se creó un servicio denominado `equipmentService.ts`.
-
-Ubicación:
-
-`client/src/services/equipmentService.ts`
-
-```typescript
-import type { Equipment } from '../types/equipment'
-
-const API_URL = 'http://localhost:5133'
-
-export async function getEquipment(): Promise<Equipment[]> {
-  const response = await fetch(`${API_URL}/api/equipment`)
-
-  if (!response.ok) {
-    throw new Error('No se pudo obtener el catálogo de equipos.')
-  }
-
-  return response.json()
-}
-```
-
-### Funcionamiento
-
-1. Se define la dirección base del backend.
-2. Se realiza una solicitud HTTP mediante `fetch()`.
-3. Se verifica si la respuesta fue exitosa.
-4. Si ocurre un error HTTP, se genera una excepción.
-5. Si la solicitud es exitosa, los datos JSON se devuelven como una lista de objetos `Equipment`.
-
-El servicio utiliza `async/await` para manejar las operaciones asíncronas.
-
-## 8. Funcionalidades del frontend
-
-La interfaz fue desarrollada utilizando React y TypeScript.
-
-### 8.1 Carga del catálogo
-
-Cuando se inicia la aplicación, React ejecuta una solicitud al endpoint `/api/equipment`.
-
-Se utilizan estados para controlar:
-
-- La lista de equipos recibidos.
-- El estado de carga.
-- Los posibles errores.
-- La búsqueda actual.
-- La categoría seleccionada.
-- El equipo seleccionado para consultar sus detalles.
-
-### 8.2 Búsqueda por nombre
-
-El usuario puede escribir el nombre de un equipo en el campo de búsqueda.
-
-La búsqueda:
-
-- No distingue entre mayúsculas y minúsculas.
-- Permite encontrar coincidencias parciales.
-- Elimina espacios innecesarios al principio y al final de la búsqueda.
-
-### 8.3 Filtrado por categoría
-
-La interfaz permite seleccionar una categoría para limitar los resultados.
-
-La opción `Todas` permite visualizar nuevamente todos los equipos.
-
-Las categorías se obtienen a partir de los datos recibidos desde la API.
-
-### 8.4 Búsqueda combinada
-
-La búsqueda por nombre y el filtro por categoría funcionan simultáneamente.
-
-Por ejemplo, el usuario puede seleccionar `Computadoras` y escribir `Dell` para encontrar equipos que cumplan ambas condiciones.
-
-### 8.5 Detalles del equipo
-
-Al seleccionar una tarjeta del catálogo, se abre una ventana modal con información adicional.
-
-La ventana presenta:
-
-- Nombre del equipo.
-- Código de activo.
-- Categoría.
-- Descripción.
-- Disponibilidad actual.
-
-La ventana puede cerrarse mediante el botón de cierre o haciendo clic fuera de ella.
-
-También se implementaron atributos de accesibilidad para identificar el diálogo y permitir su uso mediante teclado.
-
-### 8.6 Estados de la interfaz
-
-La aplicación contempla diferentes situaciones:
-
-| Estado | Comportamiento |
-|---|---|
-| Loading | Indica que el catálogo está cargando. |
-| Error | Informa que ocurrió un problema al obtener los datos. |
-| Empty | Informa que no existen resultados para la búsqueda. |
-| Success | Muestra los equipos recibidos desde el servidor. |
-| Details | Presenta la información del equipo seleccionado. |
-
-## 9. Configuración y ejecución del proyecto
-
-### Requisitos previos
-
-Antes de ejecutar el proyecto, es necesario tener instalado:
-
-- Node.js.
-- npm.
-- .NET SDK 10.
-- Visual Studio Code (recomendado).
-
-### 9.1 Ejecutar el backend
-
-Desde la carpeta principal del proyecto, abrir una terminal y ejecutar:
+From the repository root:
 
 ```powershell
-dotnet run --project server/CELD.Api
-```
+dotnet build server\CELD.Api\CELD.Api.csproj
+dotnet test server\CELD.Api.Tests\CELD.Api.Tests.csproj
 
-El servidor estará disponible localmente en:
-
-```text
-http://localhost:5133
-```
-
-Para comprobar que el endpoint funciona, abrir:
-
-```text
-http://localhost:5133/api/equipment
-```
-
-Debe aparecer una respuesta JSON con los equipos de demostración.
-
-### 9.2 Ejecutar el frontend
-
-Abrir una segunda terminal y entrar en la carpeta `client`:
-
-```powershell
-cd client
-```
-
-Instalar las dependencias:
-
-```powershell
-npm.cmd install
-```
-
-Iniciar el servidor de desarrollo:
-
-```powershell
-npm.cmd run dev
-```
-
-La aplicación estará disponible en:
-
-```text
-http://localhost:5173
-```
-
-**Importante:** el backend y el frontend deben estar ejecutándose simultáneamente para que el catálogo pueda obtener los datos del servidor.
-
-## 10. Pruebas automatizadas
-
-Para verificar el comportamiento del catálogo se configuró Vitest junto con React Testing Library y jsdom.
-
-### Dependencias utilizadas
-
-- `vitest`
-- `@testing-library/react`
-- `@testing-library/jest-dom`
-- `jsdom`
-
-La configuración de pruebas se encuentra en:
-
-`client/vite.config.ts`
-
-El archivo de configuración inicial de las pruebas se encuentra en:
-
-`client/src/test/setup.ts`
-
-### Pruebas implementadas
-
-Las pruebas se encuentran en:
-
-`client/src/App.test.tsx`
-
-Se implementaron ocho pruebas:
-
-| # | Prueba | Resultado |
-|---|---|---|
-| 1 | Carga y muestra los equipos recibidos desde la API. | Passed |
-| 2 | Busca equipos por nombre. | Passed |
-| 3 | Filtra equipos por categoría. | Passed |
-| 4 | Combina búsqueda y filtrado por categoría. | Passed |
-| 5 | Muestra un mensaje cuando no existen coincidencias. | Passed |
-| 6 | Abre y muestra los detalles de un equipo. | Passed |
-| 7 | Permite cerrar la ventana de detalles. | Passed |
-| 8 | Muestra un mensaje de error cuando falla la solicitud a la API. | Passed |
-
-Las pruebas utilizan una simulación del servicio `getEquipment` para controlar las respuestas recibidas por el componente.
-
-Esto permite comprobar el comportamiento del frontend sin depender de que el backend esté ejecutándose durante cada prueba.
-
-### Ejecutar las pruebas
-
-Desde la carpeta `client`:
-
-```powershell
-npm.cmd test
-```
-
-Para ejecutar las pruebas una sola vez, sin dejar Vitest en modo de observación:
-
-```powershell
+Set-Location client
+npm.cmd ci
 npm.cmd test -- --run
-```
-
-### Resultado obtenido
-
-En la última ejecución:
-
-```text
-Test Files  1 passed (1)
-Tests       8 passed (8)
-```
-
-Las ocho pruebas implementadas fueron aprobadas.
-
-## 11. Verificación de calidad y compilación
-
-Además de las pruebas automatizadas, se realizaron dos verificaciones adicionales.
-
-### 11.1 Build de producción
-
-Comando:
-
-```powershell
+npm.cmd run lint
 npm.cmd run build
 ```
 
-Este comando ejecuta:
+The API tests use real EF Core SQLite relational behavior. They cover
+concurrent reservation and status requests, ownership/role denial, valid and
+invalid transitions, cookie/CSRF behavior, restart persistence, and failed
+History Event writes. The performance test warms the API and checks catalog and
+Staff list latency against the SRS's two-second local bound with 56 items and
+100 historical reservations. Client tests cover loading/error/empty states,
+search/filter requests, sign-in, reservation actions, and keyboard-operable
+details.
 
-```text
-tsc -b && vite build
-```
+Current execution evidence and unrun acceptance items are recorded in
+[test plan and evidence](docs/test-plan-and-results.md); authoring a test does
+not make it a pass until the command is executed.
 
-- TypeScript comprueba los tipos y realiza la compilación.
-- Vite genera los archivos optimizados para producción.
+## Manual browser acceptance
 
-**Resultado obtenido:**
+1. Browse/search the catalog without signing in; open an item and confirm
+   details and current availability.
+2. Attempt an invalid sign-in, then sign in as `student1` with the password
+   entered at seed time.
+3. Reserve an Available item and verify it appears in **My reservations** and
+   becomes Unavailable in the catalog.
+4. Sign out; sign in as `staff1`. In the Staff queue, record pickup and then
+   return. Confirm the chronological history and that the item becomes
+   Available.
+5. Sign out; sign in as `student1` and reserve the returned item again.
+6. Try Student 2's view of Student 1's reservation through the API or rely on
+   the executed ownership integration test: the server returns not-found
+   without private record details. A Student request to the Staff queue is
+   forbidden.
 
-```text
-vite v8.3.6 building client environment for production...
-✓ 18 modules transformed.
-✓ built in 88ms
-```
+The automated API tests exercise the negative paths in step 6. The manual
+browser procedure must be performed separately before claiming the SRS's
+end-to-end acceptance evidence.
 
-Se generó correctamente la carpeta:
+## CI
 
-```text
-client/dist/
-```
+GitHub Actions is configured in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) to use pinned .NET/Node
+versions, `npm ci`, and the server/client build, test, and lint checks on pushes
+and pull requests. A workflow file in the repository is not evidence that a
+GitHub Actions run or deliberate failing-check demonstration has executed.
 
-### 11.2 ESLint
+## Known limitations and trade-offs
 
-Comando:
-
-```powershell
-npm.cmd run lint
-```
-
-**Resultado obtenido:**
-
-```text
-> eslint .
-```
-
-El comando terminó sin reportar errores de ESLint.
-
-## 12. Limitaciones actuales y trabajo pendiente
-
-La implementación actual corresponde al módulo del catálogo y todavía requiere completar algunas tareas antes de considerarse parte de la versión final del sistema.
-
-### Limitaciones actuales
-
-1. **Almacenamiento temporal:** los equipos están definidos en memoria en el backend.
-2. **Base de datos:** todavía no se ha integrado una base de datos persistente.
-3. **Datos de demostración:** los seis equipos actuales se utilizan para desarrollar y probar el catálogo.
-4. **Dirección de API:** el frontend utiliza actualmente una URL local configurada directamente en el servicio.
-5. **Detalles del equipo:** la ventana modal utiliza la información que ya fue recibida en la lista del catálogo; todavía no realiza una solicitud independiente para obtener los detalles.
-6. **Integración del equipo:** los módulos desarrollados por los demás integrantes todavía no están integrados.
-
-### Trabajo pendiente
-
-- Integrar una base de datos persistente cuando se defina la solución del equipo.
-- Confirmar la estructura definitiva de los endpoints con el resto del equipo.
-- Revisar la integración con los módulos de los demás integrantes.
-- Configurar la dirección de la API para los distintos entornos.
-- Completar las pruebas de integración con el backend real.
-- Verificar el comportamiento del sistema con los datos definitivos.
-
-## 13. Estado actual del módulo
-
-A la fecha de esta documentación, el módulo del catálogo cuenta con:
-
-- Interfaz React + TypeScript.
-- Comunicación con una API ASP.NET Core.
-- Visualización de equipos.
-- Búsqueda por nombre.
-- Filtro por categoría.
-- Búsqueda combinada.
-- Ventana modal de detalles.
-- Manejo de carga y errores.
-- Ocho pruebas automatizadas aprobadas.
-- Compilación de producción exitosa.
-- ESLint sin errores.
-
-**Estado:** módulo del catálogo implementado y verificado mediante pruebas del frontend, compilación y análisis estático. La integración definitiva con la base de datos y los demás módulos del sistema continúa pendiente.
-
----
-
-## 14. Notas para integración y handoff
-
-Este módulo se desarrolló de manera independiente para facilitar su posterior integración con el resto del sistema CELD.
-
-El servicio `equipmentService.ts` centraliza la comunicación con el backend, mientras que `equipment.ts` define el modelo de datos utilizado por el frontend.
-
-Los demás integrantes pueden utilizar esta estructura como referencia al conectar sus funcionalidades con el catálogo.
-
-Antes de integrar los módulos, se recomienda coordinar:
-
-- El modelo definitivo de equipos.
-- Los nombres y rutas de los endpoints.
-- La estructura de las respuestas JSON.
-- La fuente de datos de disponibilidad.
-- La configuración de la base de datos.
-- La estrategia de ejecución conjunta del frontend y backend.
-
-## 12. Funcionalidades y tareas pendientes
-
-Las siguientes tareas quedan pendientes para continuar el desarrollo y completar la integración del sistema CELD.
-
-### 12.1 Catálogo de equipos (módulo actual)
-
-- [ ] Integrar una base de datos persistente para almacenar los equipos.
-- [ ] Sustituir los datos temporales de demostración por información almacenada en la base de datos.
-- [ ] Implementar o integrar un endpoint para consultar los detalles individuales de un equipo.
-- [ ] Configurar la dirección de la API mediante variables de entorno.
-- [ ] Realizar pruebas de integración entre React y ASP.NET Core.
-- [ ] Verificar que la disponibilidad mostrada corresponda a la información actualizada del servidor.
-
-### 12.2 Integración con los demás módulos
-
-- [ ] Integrar el módulo de autenticación de usuarios.
-- [ ] Integrar las funcionalidades de reservación de equipos.
-- [ ] Integrar la cancelación de reservaciones.
-- [ ] Integrar las funcionalidades del personal para gestionar la entrega (*pickup*) de equipos.
-- [ ] Integrar las funcionalidades del personal para gestionar la devolución (*return*) de equipos.
-- [ ] Coordinar los modelos de datos y endpoints entre los diferentes módulos.
-- [ ] Verificar que los módulos puedan comunicarse correctamente.
-
-### 12.3 Verificación y pruebas finales
-
-- [ ] Ejecutar pruebas de integración del sistema completo.
-- [ ] Verificar los permisos y comportamientos según el tipo de usuario.
-- [ ] Comprobar el manejo de errores entre frontend y backend.
-- [ ] Verificar la persistencia y consistencia de los datos.
-- [ ] Realizar pruebas del sistema completo de acuerdo con los requisitos del SRS.
-- [ ] Preparar la documentación final del proyecto.
-
-### 12.4 Limitaciones de la implementación actual
-
-- El catálogo utiliza actualmente seis equipos de demostración almacenados temporalmente en memoria.
-- Todavía no se ha conectado una base de datos persistente.
-- La consulta de detalles utiliza los datos que ya fueron recibidos al cargar el catálogo.
-- Las pruebas actuales son pruebas del frontend con el servicio de API simulado; todavía no se han realizado pruebas de integración con el backend real.
-- Los módulos de los demás integrantes todavía no están integrados.
-
-**Fin de la documentación del módulo de catálogo de CELD.**
+- The database provider is provisional until the instructor environment sheet
+  is checked. If it differs, replace SQLite, its provider-specific filtered
+  index, and rerun AC-04/AC-10 tests against the approved provider.
+- `EnsureCreated` bootstraps the local SQLite schema; a deployed release needs
+  reviewed EF migrations, a deployment target, backup/recovery steps, and
+  post-deployment verification.
+- Profile F keeps endpoint logic direct and compact, but
+  `server\CELD.Api\Program.cs` now owns many endpoint concerns. A service or
+  feature split may improve navigation if the handlers continue to grow; do not
+  add it without a concrete reason and an ADR update.
+- The local SQLite file is ignored by Git and contains personal demo data.
+  Remove it only when intentionally resetting the local demo database.
+- For a local recovery copy, stop the API before copying
+  `server\CELD.Api\App_Data\celd.db`; restore that file with the API stopped.
+  Automated backups, schema migrations, and production restore testing are not
+  configured because the deployment target was not supplied.
+- Azure/deployment, GitHub workflow execution, deliberate CI failure evidence,
+  and a witnessed manual browser run are not claimed here unless listed as
+  executed in the evidence document.

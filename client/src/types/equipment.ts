@@ -5,5 +5,5 @@ export interface Equipment {
   name: string
   category: string
   description: string
-  availability: 'Available' | 'Unavailable'
+  isAvailable: boolean
 }
