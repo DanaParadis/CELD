@@ -195,3 +195,30 @@ GitHub Actions run or deliberate failing-check demonstration has executed.
 - Azure/deployment, GitHub workflow execution, deliberate CI failure evidence,
   and a witnessed manual browser run are not claimed here unless listed as
   executed in the evidence document.
+
+## Recent Improvements
+
+### Frontend
+- Implemented separate pages for Equipment Catalog, Equipment Details, My Reservations, Staff Reservations, and Login.
+- Integrated React Router for navigation between pages.
+- Added role-based navigation for Students and Staff.
+- Added dedicated equipment details pages with reservation functionality.
+- Improved reservation management interfaces for Students and Staff.
+
+### Backend and Database
+- Confirmed SQLite integration using Entity Framework Core.
+- Configured database initialization and seed accounts for development.
+- Updated development account passwords through environment variables.
+- Maintained ASP.NET Core Minimal APIs for authentication, equipment, and reservation operations.
+
+### Reservation Functionality
+- Implemented equipment reservation creation.
+- Added reservation cancellation for Students.
+- Added equipment pickup and return operations for Staff.
+- Displayed reservation status and history.
+
+### Development and Testing
+- Verified frontend and backend communication.
+- Successfully tested user authentication.
+- Successfully tested equipment reservations.
+- Confirmed the application builds successfully with Vite and TypeScript.

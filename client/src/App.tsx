@@ -1,10 +1,14 @@
+
+import { useEffect, useState } from 'react'
 import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react'
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+} from 'react-router-dom'
+
 import { getCurrentUser, signIn, signOut } from './services/authService'
 import { getEquipment, getEquipmentById } from './services/equipmentService'
 import {
@@ -13,68 +17,155 @@ import {
   getStaffReservations,
   transitionReservation,
 } from './services/reservationService'
+
 import type { Equipment } from './types/equipment'
 import type { CurrentUser, Reservation } from './types/reservation'
-import './App.css'
 
-const categoriesLabel = 'All categories'
-const statuses = ['', 'Reserved', 'CheckedOut', 'Cancelled', 'Returned']
+import Layout from './components/Layout'
+import EquipmentPage from './pages/EquipmentPage'
+import EquipmentDetailsPage from './pages/EquipmentDetailsPage'
+import MyReservationsPage from './pages/MyReservationsPage'
+import StaffReservationsPage from './pages/StaffReservationsPage'
+import LoginPage from './pages/LoginPage'
+
+import './App.css'
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return 'An unexpected error occurred. Please try again.'
 }
 
-function App() {
+interface EquipmentDetailsRouteProps {
+  user: CurrentUser | null
+  workingId: number | null
+  refreshKey: number
+  onReserve: (item: Equipment) => void
+}
+
+
+function EquipmentDetailsRoute({
+  user,
+  workingId,
+  refreshKey,
+  onReserve,
+}: EquipmentDetailsRouteProps) {
+  const { id } = useParams()
+
+  const [equipment, setEquipment] = useState<Equipment | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const equipmentId = Number(id)
+  const invalidId = !id || !Number.isInteger(equipmentId) || equipmentId <= 0
+
+  useEffect(() => {
+    if (invalidId) return
+
+    let active = true
+
+    async function loadEquipment() {
+      setIsLoading(true)
+      setError('')
+
+      try {
+        const item = await getEquipmentById(equipmentId)
+
+        if (active) setEquipment(item)
+      } catch (requestError: unknown) {
+        if (active) setError(getErrorMessage(requestError))
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    void loadEquipment()
+
+    return () => {
+      active = false
+    }
+  }, [equipmentId, invalidId, refreshKey])
+
+  return (
+    <EquipmentDetailsPage
+      equipment={invalidId ? null : equipment}
+      user={user}
+      isLoading={invalidId ? false : isLoading}
+      workingId={workingId}
+      error={invalidId ? 'Invalid equipment ID.' : error}
+      onReserve={onReserve}
+    />
+  )
+}
+
+function AppContent() {
+  const navigate = useNavigate()
+
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
+
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [categories, setCategories] = useState<string[]>([])
   const [equipment, setEquipment] = useState<Equipment[]>([])
   const [loadedEquipmentKey, setLoadedEquipmentKey] = useState('')
-  const [equipmentFailure, setEquipmentFailure] = useState<{ key: string; message: string } | null>(null)
-  const [selectedEquipment, setSelectedEquipment] = useState<Equipment | null>(null)
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false)
+  const [equipmentFailure, setEquipmentFailure] = useState<{
+    key: string
+    message: string
+  } | null>(null)
+
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [loadedReservationKey, setLoadedReservationKey] = useState('')
-  const [reservationFailure, setReservationFailure] = useState<{ key: string; message: string } | null>(null)
+  const [reservationFailure, setReservationFailure] = useState<{
+    key: string
+    message: string
+  } | null>(null)
   const [reservationFilter, setReservationFilter] = useState('')
+
   const [actionError, setActionError] = useState('')
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const dialogRef = useRef<HTMLElement>(null)
-  const dialogCloseButtonRef = useRef<HTMLButtonElement>(null)
-  const dialogOpenerRef = useRef<HTMLButtonElement | null>(null)
-  const equipmentKey = JSON.stringify([search, selectedCategory, refreshKey])
+
+  const equipmentKey = JSON.stringify([
+    search,
+    selectedCategory,
+    refreshKey,
+  ])
+
   const reservationKey = JSON.stringify([
     user?.id ?? null,
     user?.role ?? null,
     reservationFilter,
     refreshKey,
   ])
+
   const isLoadingEquipment = loadedEquipmentKey !== equipmentKey
-  const equipmentError = equipmentFailure?.key === equipmentKey
-    ? equipmentFailure.message
-    : ''
-  const isLoadingReservations = Boolean(user) && loadedReservationKey !== reservationKey
-  const reservationLoadError = reservationFailure?.key === reservationKey
-    ? reservationFailure.message
-    : ''
+
+  const equipmentError =
+    equipmentFailure?.key === equipmentKey
+      ? equipmentFailure.message
+      : ''
+
+  const isLoadingReservations =
+    Boolean(user) && loadedReservationKey !== reservationKey
+
+  const reservationError =
+    reservationFailure?.key === reservationKey
+      ? reservationFailure.message
+      : ''
 
   useEffect(() => {
     let active = true
+
     getCurrentUser()
       .then((currentUser) => {
         if (active && currentUser) setUser(currentUser)
       })
       .catch((error: unknown) => {
-        if (active) {
-          setAuthError(getErrorMessage(error))
-        }
+        if (active) setAuthError(getErrorMessage(error))
       })
       .finally(() => {
         if (active) setAuthChecked(true)
@@ -86,36 +177,28 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!selectedEquipment) return
-
-    dialogCloseButtonRef.current?.focus()
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedEquipment(null)
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      window.removeEventListener('keydown', closeOnEscape)
-      if (dialogOpenerRef.current?.isConnected) dialogOpenerRef.current.focus()
-    }
-  }, [selectedEquipment])
-
-  useEffect(() => {
     const controller = new AbortController()
 
     getEquipment(search, selectedCategory, controller.signal)
       .then((items) => {
         setEquipment(items)
+
         if (!search && !selectedCategory) {
           setCategories([...new Set(items.map((item) => item.category))])
         }
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setEquipmentFailure({ key: equipmentKey, message: getErrorMessage(error) })
+          setEquipmentFailure({
+            key: equipmentKey,
+            message: getErrorMessage(error),
+          })
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadedEquipmentKey(equipmentKey)
+        if (!controller.signal.aborted) {
+          setLoadedEquipmentKey(equipmentKey)
+        }
       })
 
     return () => controller.abort()
@@ -123,13 +206,13 @@ function App() {
 
   useEffect(() => {
     let active = true
-    if (!user) {
-      return
-    }
 
-    const loadReservations = user.role === 'Staff'
-      ? getStaffReservations(reservationFilter)
-      : getMyReservations()
+    if (!user) return
+
+    const loadReservations =
+      user.role === 'Staff'
+        ? getStaffReservations(reservationFilter)
+        : getMyReservations()
 
     loadReservations
       .then((items) => {
@@ -140,7 +223,10 @@ function App() {
       })
       .catch((error: unknown) => {
         if (active) {
-          setReservationFailure({ key: reservationKey, message: getErrorMessage(error) })
+          setReservationFailure({
+            key: reservationKey,
+            message: getErrorMessage(error),
+          })
           setLoadedReservationKey(reservationKey)
         }
       })
@@ -150,12 +236,19 @@ function App() {
     }
   }, [user, reservationFilter, refreshKey, reservationKey])
 
-  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function handleSignIn() {
     setAuthError('')
+
     try {
-      setUser(await signIn(username, password))
+      const signedInUser = await signIn(username, password)
+      setUser(signedInUser)
       setPassword('')
+
+      navigate(
+        signedInUser.role === 'Staff'
+          ? '/staff/reservations'
+          : '/my-reservations',
+      )
     } catch (error) {
       setAuthError(getErrorMessage(error))
     }
@@ -163,63 +256,27 @@ function App() {
 
   async function handleSignOut() {
     setAuthError('')
+
     try {
       await signOut()
       setUser(null)
+      setReservations([])
+      setReservationFilter('')
+      navigate('/equipment')
     } catch (error) {
       setAuthError(getErrorMessage(error))
-    }
-  }
-
-  async function openEquipment(id: number, opener: HTMLButtonElement) {
-    dialogOpenerRef.current = opener
-    setIsLoadingDetails(true)
-    setActionError('')
-    try {
-      setSelectedEquipment(await getEquipmentById(id))
-    } catch (error) {
-      setActionError(getErrorMessage(error))
-    } finally {
-      setIsLoadingDetails(false)
-    }
-  }
-
-  function trapDialogTab(event: ReactKeyboardEvent<HTMLElement>) {
-    if (event.key !== 'Tab') return
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), a[href], input, select, [tabindex]:not([tabindex="-1"])',
-    )
-    if (!focusable?.length) return
-
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
     }
   }
 
   async function handleReserve(item: Equipment) {
     setWorkingId(item.id)
     setActionError('')
+
     try {
       await createReservation(item.id)
       setRefreshKey((key) => key + 1)
-      setSelectedEquipment(await getEquipmentById(item.id))
     } catch (error) {
       setRefreshKey((key) => key + 1)
-      try {
-        setSelectedEquipment(await getEquipmentById(item.id))
-      } catch (refreshError) {
-        setActionError(
-          `${getErrorMessage(error)} Current availability could not be refreshed: ${getErrorMessage(refreshError)}`,
-        )
-        return
-      }
-
       setActionError(getErrorMessage(error))
     } finally {
       setWorkingId(null)
@@ -232,302 +289,165 @@ function App() {
   ) {
     setWorkingId(reservation.id)
     setActionError('')
+
     try {
       await transitionReservation(reservation.id, action)
       setRefreshKey((key) => key + 1)
-      if (selectedEquipment?.id === reservation.equipment.id) {
-        setSelectedEquipment(await getEquipmentById(reservation.equipment.id))
-      }
     } catch (error) {
       setRefreshKey((key) => key + 1)
-      if (selectedEquipment?.id === reservation.equipment.id) {
-        try {
-          setSelectedEquipment(await getEquipmentById(reservation.equipment.id))
-        } catch (refreshError) {
-          setActionError(
-            `${getErrorMessage(error)} Current equipment state could not be refreshed: ${getErrorMessage(refreshError)}`,
-          )
-          return
-        }
-      }
-
       setActionError(getErrorMessage(error))
     } finally {
       setWorkingId(null)
     }
   }
 
-  const displayCategories = [categoriesLabel, ...categories]
+  if (!authChecked) {
+    return (
+      <div className="app">
+        <p className="loading-message" role="status">
+          Checking session...
+        </p>
+      </div>
+    )
+  }
 
   return (
-    <div className="app">
-      <header className="navbar">
-        <a className="brand" href="#catalog" aria-label="CELD home">
-          <span className="brand-icon">C</span>
-          <span>CELD</span>
-        </a>
-        <nav aria-label="Main navigation">
-          <a href="#catalog">Equipment</a>
-          {user && <a href="#reservations">{user.role === 'Staff' ? 'Staff queue' : 'My reservations'}</a>}
-        </nav>
-        <div className="session-controls">
-          {authChecked && user ? (
-            <>
-              <span className="user-label">{user.displayName} · {user.role}</span>
-              <button className="login-button secondary-button" onClick={handleSignOut}>
-                Sign out
-              </button>
-            </>
-          ) : (
-            <a className="login-button" href="#sign-in">Sign in</a>
-          )}
-        </div>
-      </header>
-
-      <main>
-        <section className="hero">
-          <p className="eyebrow">CAMPUS EQUIPMENT LENDING DESK</p>
-          <h1>Find the equipment you need.</h1>
-          <p className="hero-description">
-            Browse campus equipment, make a reservation, and track its lending status.
-          </p>
-          <div className="search-container">
-            <label htmlFor="equipment-search">Search equipment</label>
-            <input
-              id="equipment-search"
-              type="search"
-              placeholder="Search by name..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+    <>
+      <Routes>
+        <Route
+          element={
+            <Layout
+              user={user}
+              onSignOut={handleSignOut}
             />
-          </div>
-        </section>
+          }
+        >
+          <Route
+            path="/"
+            element={<Navigate to="/equipment" replace />}
+          />
 
-        <section className="catalog" id="catalog" aria-labelledby="catalog-title">
-          <div className="catalog-heading">
-            <div>
-              <p className="eyebrow">CATALOG</p>
-              <h2 id="catalog-title">Explore equipment</h2>
-            </div>
-            <span className="equipment-count">{equipment.length} items</span>
-          </div>
-          <div className="category-filter">
-            <label htmlFor="category">Category:</label>
-            <select
-              id="category"
-              value={selectedCategory || categoriesLabel}
-              onChange={(event) =>
-                setSelectedCategory(event.target.value === categoriesLabel ? '' : event.target.value)
-              }
-            >
-              {displayCategories.map((category) => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-
-          {isLoadingEquipment && <p className="loading-message" role="status">Loading equipment...</p>}
-          {equipmentError && (
-            <div className="error-message" role="alert">
-              <p>{equipmentError}</p>
-              <button onClick={() => setRefreshKey((key) => key + 1)}>Retry</button>
-            </div>
-          )}
-          {!isLoadingEquipment && !equipmentError && (
-            equipment.length > 0 ? (
-              <div className="equipment-grid">
-                {equipment.map((item) => (
-                  <article className="equipment-card" key={item.id}>
-                    <div className="equipment-image" aria-hidden="true"><span>▣</span></div>
-                    <div className="equipment-info">
-                      <span className="category">{item.category}</span>
-                      <h3>{item.name}</h3>
-                      <p>Asset code: {item.assetCode}</p>
-                      <span className={`availability ${item.isAvailable ? 'available' : 'unavailable'}`}>
-                        {item.isAvailable ? 'Available' : 'Unavailable'}
-                      </span>
-                      <button
-                        className="text-button"
-                        onClick={(event) => void openEquipment(item.id, event.currentTarget)}
-                      >
-                        View details
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-message">No equipment matches these search filters.</p>
-            )
-          )}
-        </section>
-
-        {!authChecked && <p className="loading-message" role="status">Checking session...</p>}
-        {authChecked && !user && (
-          <section className="workflow-section sign-in-section" id="sign-in">
-            <p className="eyebrow">ACCOUNT</p>
-            <h2>Sign in to CELD</h2>
-            <p>Use a provisioned Student or Lending Staff account.</p>
-            <form className="sign-in-form" onSubmit={handleSignIn}>
-              <label htmlFor="username">Username</label>
-              <input
-                id="username"
-                autoComplete="username"
-                required
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
+          <Route
+            path="/equipment"
+            element={
+              <EquipmentPage
+                equipment={equipment}
+                search={search}
+                onSearchChange={setSearch}
+                selectedCategory={selectedCategory}
+                categories={categories}
+                onCategoryChange={setSelectedCategory}
+                isLoading={isLoadingEquipment}
+                error={equipmentError}
+                onRetry={() => setRefreshKey((key) => key + 1)}
+                onViewDetails={(id) => navigate(`/equipment/${id}`)}
               />
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+            }
+          />
+
+          <Route
+            path="/equipment/:id"
+            element={
+              <EquipmentDetailsRoute
+                user={user}
+                workingId={workingId}
+                refreshKey={refreshKey}
+                onReserve={handleReserve}
               />
-              <button className="login-button" type="submit">Sign in</button>
-            </form>
-            {authError && <p className="error-message" role="alert">{authError}</p>}
-          </section>
-        )}
+            }
+          />
 
-        {authChecked && user && (
-          <section className="workflow-section" id="reservations" aria-labelledby="reservations-title">
-            <div className="catalog-heading">
-              <div>
-                <p className="eyebrow">{user.role === 'Staff' ? 'LENDING DESK' : 'YOUR ACCOUNT'}</p>
-                <h2 id="reservations-title">
-                  {user.role === 'Staff' ? 'Reservation queue' : 'My reservations'}
-                </h2>
-              </div>
-              {user.role === 'Staff' && (
-                <div className="category-filter">
-                  <label htmlFor="reservation-status">Status:</label>
-                  <select
-                    id="reservation-status"
-                    value={reservationFilter}
-                    onChange={(event) => setReservationFilter(event.target.value)}
-                  >
-                    {statuses.map((status) => (
-                      <option key={status || 'All'} value={status}>{status || 'All statuses'}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-            {reservationLoadError && <p className="error-message" role="alert">{reservationLoadError}</p>}
-            {isLoadingReservations && <p className="loading-message" role="status">Loading reservations...</p>}
-            {!isLoadingReservations && !reservationLoadError && reservations.length === 0 && (
-              <p className="empty-message">No reservations to display.</p>
-            )}
-            {!isLoadingReservations && !reservationLoadError && (
-              <div className="reservation-list">
-                {reservations.map((reservation) => (
-                <article className="reservation-card" key={reservation.id}>
-                  <div className="reservation-heading">
-                    <div>
-                      <h3>{reservation.equipment.name}</h3>
-                      <p>{reservation.equipment.assetCode} · {reservation.student.displayName}</p>
-                    </div>
-                    <span className={`status-badge status-${reservation.status.toLowerCase()}`}>
-                      {reservation.status}
-                    </span>
-                  </div>
-                  <p>Created: {new Date(reservation.createdAtUtc).toLocaleString()}</p>
-                  <div className="reservation-actions">
-                    {user.role === 'Student' && reservation.status === 'Reserved' && (
-                      <button
-                        disabled={workingId === reservation.id}
-                        onClick={() => void handleTransition(reservation, 'cancel')}
-                      >
-                        Cancel reservation
-                      </button>
-                    )}
-                    {user.role === 'Staff' && reservation.status === 'Reserved' && (
-                      <button
-                        disabled={workingId === reservation.id}
-                        onClick={() => void handleTransition(reservation, 'pickup')}
-                      >
-                        Record pickup
-                      </button>
-                    )}
-                    {user.role === 'Staff' && reservation.status === 'CheckedOut' && (
-                      <button
-                        disabled={workingId === reservation.id}
-                        onClick={() => void handleTransition(reservation, 'return')}
-                      >
-                        Record return
-                      </button>
-                    )}
-                  </div>
-                  <h4>History</h4>
-                  <ol className="history-list">
-                    {reservation.history.map((entry) => (
-                      <li key={entry.id}>
-                        {entry.eventType}: {entry.status} by {entry.actorDisplayName}
-                        {' · '}{new Date(entry.occurredAtUtc).toLocaleString()}
-                      </li>
-                    ))}
-                  </ol>
-                </article>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-      </main>
+          <Route
+            path="/login"
+            element={
+              user ? (
+                <Navigate
+                  to={user.role === 'Staff' ? '/staff/reservations' : '/my-reservations'}
+                  replace
+                />
+              ) : (
+                <LoginPage
+                  username={username}
+                  password={password}
+                  authError={authError}
+                  onUsernameChange={setUsername}
+                  onPasswordChange={setPassword}
+                  onSubmit={handleSignIn}
+                />
+              )
+            }
+          />
 
-      {actionError && <p className="global-error" role="alert">{actionError}</p>}
+          <Route
+            path="/my-reservations"
+            element={
+              user?.role === 'Student' ? (
+                <MyReservationsPage
+                  reservations={reservations}
+                  isLoading={isLoadingReservations}
+                  error={reservationError}
+                  workingId={workingId}
+                  onCancel={(reservation) =>
+                    handleTransition(reservation, 'cancel')
+                  }
+                />
+              ) : (
+                <Navigate to={user ? '/equipment' : '/login'} replace />
+              )
+            }
+          />
 
-      {(selectedEquipment || isLoadingDetails) && (
-        <div className="modal-overlay" onClick={() => setSelectedEquipment(null)}>
-          <section
-            className="equipment-modal"
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="equipment-modal-title"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={trapDialogTab}
-          >
-            <button
-              className="modal-close"
-              ref={dialogCloseButtonRef}
-              onClick={() => setSelectedEquipment(null)}
-              aria-label="Close details"
-            >
-              &times;
-            </button>
-            {isLoadingDetails && <p role="status">Loading item details...</p>}
-            {selectedEquipment && (
-              <>
-                <p className="eyebrow">EQUIPMENT DETAILS</p>
-                <h2 id="equipment-modal-title">{selectedEquipment.name}</h2>
-                <p><strong>Asset code:</strong> {selectedEquipment.assetCode}</p>
-                <p><strong>Category:</strong> {selectedEquipment.category}</p>
-                <p><strong>Description:</strong> {selectedEquipment.description}</p>
-                <p>
-                  <strong>Availability:</strong>{' '}
-                  {selectedEquipment.isAvailable ? 'Available' : 'Unavailable'}
-                </p>
-                {user?.role === 'Student' && selectedEquipment.isAvailable && (
-                  <button
-                    className="login-button"
-                    disabled={workingId === selectedEquipment.id}
-                    onClick={() => void handleReserve(selectedEquipment)}
-                  >
-                    Reserve equipment
-                  </button>
-                )}
-              </>
-            )}
-          </section>
-        </div>
+          <Route
+            path="/staff/reservations"
+            element={
+              user?.role === 'Staff' ? (
+                <StaffReservationsPage
+                  reservations={reservations}
+                  isLoading={isLoadingReservations}
+                  error={reservationError}
+                  workingId={workingId}
+                  reservationFilter={reservationFilter}
+                  onFilterChange={setReservationFilter}
+                  onPickup={(reservation) =>
+                    handleTransition(reservation, 'pickup')
+                  }
+                  onReturn={(reservation) =>
+                    handleTransition(reservation, 'return')
+                  }
+                />
+              ) : (
+                <Navigate to={user ? '/equipment' : '/login'} replace />
+              )
+            }
+          />
+
+          <Route
+            path="*"
+            element={<Navigate to="/equipment" replace />}
+          />
+        </Route>
+      </Routes>
+
+      {actionError && (
+        <p className="global-error" role="alert">
+          {actionError}
+        </p>
       )}
 
-      <footer><p>CELD · Campus Equipment Lending Desk</p></footer>
-    </div>
+      {authError && user && (
+        <p className="global-error" role="alert">
+          {authError}
+        </p>
+      )}
+    </>
+  )
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   )
 }
 
